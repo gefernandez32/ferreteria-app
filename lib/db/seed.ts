@@ -7,8 +7,14 @@
  *
  * Uso: `pnpm db:seed` (idempotente: limpia y recarga todas las tablas).
  */
+import { config } from "dotenv"
+import { drizzle } from "drizzle-orm/postgres-js"
+import postgres from "postgres"
+
+// tsx no carga .env.local: hacerlo antes de leer DATABASE_URL.
+config({ path: ".env.local" })
+
 import { productos as catalogoMock, type Producto as ProductoMock } from "../data"
-import { db } from "./client"
 import {
   facturaLineas,
   facturas,
@@ -72,75 +78,99 @@ function aliasDe(provIndex: number, id: number, codigoInterno: string): string {
   }
 }
 
-function seed() {
+async function seed() {
+  const url = process.env.DATABASE_URL
+  if (!url) throw new Error("DATABASE_URL no está definida (.env.local).")
+
+  const client = postgres(url, { max: 1 })
+  const db = drizzle(client)
+
   console.log(`Sembrando ${catalogoMock.length} SKUs y ${PROVEEDORES.length} proveedores...`)
 
-  db.transaction((tx) => {
+  await db.transaction(async (tx) => {
+    // Inserta en lotes para no saturar el límite de parámetros de Postgres
+    // (~65535) ni hacer un round-trip por fila sobre el proxy público.
+    // Usa `tx` (no `db`): con el pool en max:1 una conexión aparte deadlockearía.
+    async function insertarEnLotes<T>(
+      tabla: Parameters<typeof tx.insert>[0],
+      filas: T[],
+      porLote = 500
+    ) {
+      for (let i = 0; i < filas.length; i += porLote) {
+        await tx.insert(tabla).values(filas.slice(i, i + porLote) as never)
+      }
+    }
+
     // Limpieza (respetando FKs: hijos antes que padres).
-    tx.delete(ordenLineas).run()
-    tx.delete(ordenesCompra).run()
-    tx.delete(movimientosStock).run()
-    tx.delete(facturaLineas).run()
-    tx.delete(facturas).run()
-    tx.delete(remitoLineas).run()
-    tx.delete(remitos).run()
-    tx.delete(preciosProveedor).run()
-    tx.delete(productos).run()
-    tx.delete(proveedores).run()
+    await tx.delete(ordenLineas)
+    await tx.delete(ordenesCompra)
+    await tx.delete(movimientosStock)
+    await tx.delete(facturaLineas)
+    await tx.delete(facturas)
+    await tx.delete(remitoLineas)
+    await tx.delete(remitos)
+    await tx.delete(preciosProveedor)
+    await tx.delete(productos)
+    await tx.delete(proveedores)
 
-    // Proveedores.
-    const provIds = PROVEEDORES.map(
-      (p) => tx.insert(proveedores).values(p).returning({ id: proveedores.id }).get().id
-    )
+    // Proveedores (un solo insert, ids en orden).
+    const provIds = (
+      await tx.insert(proveedores).values([...PROVEEDORES]).returning({ id: proveedores.id })
+    ).map((r) => r.id)
 
-    // Productos (SKU maestro interno).
-    for (const p of catalogoMock) {
+    // Productos (SKU maestro interno) en un único insert con returning.
+    const filasProductos = catalogoMock.map((p) => {
       const estado = estadoInicial(p.codigo)
-      const stock = estado === "limbo" ? 0 : p.stock
-      const stockMaximo = Math.max(p.stockMinimo * 4, p.stockMinimo + 20)
-      const { id } = tx
-        .insert(productos)
-        .values({
-          codigoInterno: p.codigo,
-          nombre: p.nombre,
-          familia: p.familia,
-          categoria: p.categoria,
-          sistema: p.sistema,
-          material: p.material,
-          marca: p.marca,
-          medida: p.medida,
-          esGenerico: esGenerico(p),
-          estado,
-          ubicacion: p.ubicacion,
-          stock,
-          stockMinimo: p.stockMinimo,
-          stockMaximo,
-        })
-        .returning({ id: productos.id })
-        .get()
+      return {
+        codigoInterno: p.codigo,
+        nombre: p.nombre,
+        familia: p.familia,
+        categoria: p.categoria,
+        sistema: p.sistema,
+        material: p.material,
+        marca: p.marca,
+        medida: p.medida,
+        esGenerico: esGenerico(p),
+        estado,
+        ubicacion: p.ubicacion,
+        stock: estado === "limbo" ? 0 : p.stock,
+        stockMinimo: p.stockMinimo,
+        stockMaximo: Math.max(p.stockMinimo * 4, p.stockMinimo + 20),
+      }
+    })
+    const insertados = await tx
+      .insert(productos)
+      .values(filasProductos)
+      .returning({ id: productos.id, codigoInterno: productos.codigoInterno })
+    const idPorCodigo = new Map(insertados.map((r) => [r.codigoInterno, r.id]))
 
-      // Listas de precio: DEMA (habitual) siempre; los demás según hash.
+    // Listas de precio: DEMA (habitual) siempre; los demás según hash.
+    const filasPrecios = catalogoMock.flatMap((p) => {
+      const id = idPorCodigo.get(p.codigo)!
+      const filas = []
       for (let pi = 0; pi < provIds.length; pi++) {
         const ofrece = pi === 0 || (hash(p.codigo + "prov" + pi) & 1) === 1
         if (!ofrece) continue
         const factor = 0.85 + (hash(p.codigo + "precio" + pi) % 31) / 100 // 0.85..1.15
-        const precio = Math.round((p.precioLista * factor) / 10) * 10
-        tx.insert(preciosProveedor)
-          .values({
-            productoId: id,
-            proveedorId: provIds[pi],
-            codigoProveedor: aliasDe(pi, id, p.codigo),
-            precio,
-            vigenciaDesde: AHORA.slice(0, 10),
-          })
-          .run()
+        filas.push({
+          productoId: id,
+          proveedorId: provIds[pi],
+          codigoProveedor: aliasDe(pi, id, p.codigo),
+          precio: Math.round((p.precioLista * factor) / 10) * 10,
+          vigenciaDesde: AHORA.slice(0, 10),
+        })
       }
-    }
+      return filas
+    })
 
-    return provIds
+    await insertarEnLotes(preciosProveedor, filasPrecios)
   })
 
+  await client.end()
   console.log("Seed completo.")
 }
 
-seed()
+seed().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})

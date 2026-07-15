@@ -7,7 +7,7 @@ import {
   desc,
   eq,
   getTableColumns,
-  like,
+  ilike,
   min,
   or,
   sql,
@@ -51,13 +51,13 @@ function construirFiltros(f: FiltrosProductos) {
     const patron = `%${q}%`
     conds.push(
       or(
-        like(productos.codigoInterno, patron),
-        like(productos.nombre, patron),
+        ilike(productos.codigoInterno, patron),
+        ilike(productos.nombre, patron),
         // También resuelve por código de proveedor (alias). "productos"."id"
         // va literal (no interpolado) para conservar la calificación de tabla.
         sql`EXISTS (SELECT 1 FROM ${preciosProveedor} pp
           WHERE pp.producto_id = "productos"."id"
-          AND pp.codigo_proveedor LIKE ${patron})`
+          AND pp.codigo_proveedor ILIKE ${patron})`
       )
     )
   }
@@ -68,7 +68,9 @@ function construirFiltros(f: FiltrosProductos) {
   return conds.length ? and(...conds) : undefined
 }
 
-export function listarProductos(f: FiltrosProductos): ListaProductosResponse {
+export async function listarProductos(
+  f: FiltrosProductos
+): Promise<ListaProductosResponse> {
   const page = Math.max(1, f.page ?? 1)
   const pageSize = Math.min(100, Math.max(1, f.pageSize ?? DEFAULT_PAGE_SIZE))
   const where = construirFiltros(f)
@@ -83,7 +85,7 @@ export function listarProductos(f: FiltrosProductos): ListaProductosResponse {
   const ordenar =
     (f.ordenDir ?? "asc") === "asc" ? asc(columnaOrden) : desc(columnaOrden)
 
-  const items = db
+  const items = await db
     .select({
       ...getTableColumns(productos),
       mejorPrecio: agg.mejorPrecio,
@@ -95,13 +97,11 @@ export function listarProductos(f: FiltrosProductos): ListaProductosResponse {
     .orderBy(ordenar)
     .limit(pageSize)
     .offset((page - 1) * pageSize)
-    .all()
 
-  const [{ total }] = db
+  const [{ total }] = await db
     .select({ total: count() })
     .from(productos)
     .where(where)
-    .all()
 
   return {
     items: items.map(mapListItem),
@@ -112,11 +112,17 @@ export function listarProductos(f: FiltrosProductos): ListaProductosResponse {
   }
 }
 
-export function obtenerProducto(id: number): ProductoDetalle | null {
-  const row = db.select().from(productos).where(eq(productos.id, id)).get()
+export async function obtenerProducto(
+  id: number
+): Promise<ProductoDetalle | null> {
+  const [row] = await db
+    .select()
+    .from(productos)
+    .where(eq(productos.id, id))
+    .limit(1)
   if (!row) return null
 
-  const ofertasRaw = db
+  const ofertasRaw = await db
     .select({
       proveedorId: proveedores.id,
       proveedor: proveedores.nombre,
@@ -129,7 +135,6 @@ export function obtenerProducto(id: number): ProductoDetalle | null {
     .innerJoin(proveedores, eq(proveedores.id, preciosProveedor.proveedorId))
     .where(eq(preciosProveedor.productoId, id))
     .orderBy(asc(preciosProveedor.precio))
-    .all()
 
   const minPrecio = ofertasRaw.length ? ofertasRaw[0].precio : null
   const ofertas: Oferta[] = ofertasRaw.map((o) => ({
@@ -149,40 +154,38 @@ export function obtenerProducto(id: number): ProductoDetalle | null {
 }
 
 /** Actualiza estado y/o esGenerico de un SKU (alta manual, marcar genérico). */
-export function actualizarProducto(
+export async function actualizarProducto(
   id: number,
   cambios: { estado?: ProductoDetalle["estado"]; esGenerico?: boolean }
-): ProductoDetalle | null {
+): Promise<ProductoDetalle | null> {
   const patch: Record<string, unknown> = {}
   if (cambios.estado !== undefined) patch.estado = cambios.estado
   if (cambios.esGenerico !== undefined) patch.esGenerico = cambios.esGenerico
   if (Object.keys(patch).length > 0) {
-    db.update(productos).set(patch).where(eq(productos.id, id)).run()
+    await db.update(productos).set(patch).where(eq(productos.id, id))
   }
   return obtenerProducto(id)
 }
 
-export function resumenCatalogo(): ResumenCatalogo {
-  const conteos = db
+export async function resumenCatalogo(): Promise<ResumenCatalogo> {
+  const [conteos] = await db
     .select({
       totalSkus: count(),
-      activos: sql<number>`SUM(CASE WHEN ${productos.estado} = 'activo' THEN 1 ELSE 0 END)`,
-      limbo: sql<number>`SUM(CASE WHEN ${productos.estado} = 'limbo' THEN 1 ELSE 0 END)`,
-      noComercializa: sql<number>`SUM(CASE WHEN ${productos.estado} = 'no_comercializa' THEN 1 ELSE 0 END)`,
-      bajoStock: sql<number>`SUM(CASE WHEN ${productos.stock} <= ${productos.stockMinimo} AND ${productos.estado} = 'activo' THEN 1 ELSE 0 END)`,
+      activos: sql<number>`SUM(CASE WHEN ${productos.estado} = 'activo' THEN 1 ELSE 0 END)::int`,
+      limbo: sql<number>`SUM(CASE WHEN ${productos.estado} = 'limbo' THEN 1 ELSE 0 END)::int`,
+      noComercializa: sql<number>`SUM(CASE WHEN ${productos.estado} = 'no_comercializa' THEN 1 ELSE 0 END)::int`,
+      bajoStock: sql<number>`SUM(CASE WHEN ${productos.stock} <= ${productos.stockMinimo} AND ${productos.estado} = 'activo' THEN 1 ELSE 0 END)::int`,
     })
     .from(productos)
-    .get()
 
   const agg = aggOfertas()
-  const valor = db
+  const [valor] = await db
     .select({
       valorStock: sql<number>`COALESCE(SUM(${productos.stock} * ${agg.mejorPrecio}), 0)`,
-      sinProveedor: sql<number>`SUM(CASE WHEN ${agg.productoId} IS NULL THEN 1 ELSE 0 END)`,
+      sinProveedor: sql<number>`SUM(CASE WHEN ${agg.productoId} IS NULL THEN 1 ELSE 0 END)::int`,
     })
     .from(productos)
     .leftJoin(agg, eq(agg.productoId, productos.id))
-    .get()
 
   return {
     totalSkus: conteos?.totalSkus ?? 0,

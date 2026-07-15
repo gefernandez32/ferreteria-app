@@ -11,7 +11,7 @@ export const runtime = "nodejs"
 const ORDEN_CAMPOS: OrdenCampo[] = ["codigoInterno", "nombre", "stock", "mejorPrecio"]
 const ESTADOS = ["activo", "limbo", "no_comercializa", "todos"]
 
-export function GET(request: Request) {
+export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams
   const ordenCampo = sp.get("ordenCampo")
   const estado = sp.get("estado")
@@ -32,5 +32,5 @@ export function GET(request: Request) {
     pageSize: sp.get("pageSize") ? Number(sp.get("pageSize")) : undefined,
   }
 
-  return NextResponse.json(listarProductos(filtros))
+  return NextResponse.json(await listarProductos(filtros))
 }

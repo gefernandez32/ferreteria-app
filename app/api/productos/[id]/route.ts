@@ -9,7 +9,7 @@ type Ctx = { params: Promise<{ id: string }> }
 
 export async function GET(_request: Request, { params }: Ctx) {
   const { id } = await params
-  const producto = obtenerProducto(Number(id))
+  const producto = await obtenerProducto(Number(id))
   if (!producto) {
     return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 })
   }
@@ -27,7 +27,7 @@ export async function PATCH(request: Request, { params }: Ctx) {
     return NextResponse.json({ error: "Estado inválido" }, { status: 400 })
   }
 
-  const actualizado = actualizarProducto(Number(id), {
+  const actualizado = await actualizarProducto(Number(id), {
     estado: body.estado as (typeof ESTADOS_PRODUCTO)[number] | undefined,
     esGenerico: body.esGenerico,
   })

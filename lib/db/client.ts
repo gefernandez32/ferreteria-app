@@ -1,29 +1,33 @@
-import { existsSync, mkdirSync } from "node:fs"
-import path from "node:path"
-
-import Database from "better-sqlite3"
-import { drizzle } from "drizzle-orm/better-sqlite3"
+import { drizzle } from "drizzle-orm/postgres-js"
+import postgres from "postgres"
 
 import * as schema from "./schema"
 
 /**
- * Cliente SQLite único (singleton). Se guarda en `globalThis` para que el HMR
- * de Next en dev no abra una conexión nueva en cada recarga de módulo.
+ * Cliente Postgres único (singleton). Se guarda en `globalThis` para que el HMR
+ * de Next en dev no abra una conexión nueva en cada recarga de módulo y para no
+ * agotar el pool en entornos serverless (Vercel) que reusan el proceso.
  *
  * Solo se importa desde código server-side (Route Handlers con runtime nodejs,
  * scripts de seed/migración). Nunca desde componentes client.
  */
 
-export const DB_PATH = path.join(process.cwd(), "data", "ferreteria.db")
+function urlBase(): string {
+  const url = process.env.DATABASE_URL
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL no está definida. Copiá la connection string pública de " +
+        "Railway a .env.local (local) y a las env vars del proyecto en Vercel."
+    )
+  }
+  return url
+}
 
 function crearConexion() {
-  const dir = path.dirname(DB_PATH)
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-
-  const sqlite = new Database(DB_PATH)
-  sqlite.pragma("journal_mode = WAL")
-  sqlite.pragma("foreign_keys = ON")
-  return drizzle(sqlite, { schema })
+  // Pool chico: en serverless conviene 1 conexión por instancia para no
+  // saturar el límite de Railway con muchas lambdas concurrentes.
+  const client = postgres(urlBase(), { max: 1 })
+  return drizzle(client, { schema })
 }
 
 type DbClient = ReturnType<typeof crearConexion>

@@ -1,15 +1,17 @@
 import { sql } from "drizzle-orm"
 import {
+  boolean,
   index,
   integer,
+  pgTable,
   real,
-  sqliteTable,
+  serial,
   text,
   unique,
-} from "drizzle-orm/sqlite-core"
+} from "drizzle-orm/pg-core"
 
 /**
- * Schema del dominio de la ferretería (SQLite / Drizzle).
+ * Schema del dominio de la ferretería (Postgres / Drizzle).
  *
  * Resuelve los 3 problemas del análisis de preventa:
  *  P1 — Catálogo Maestro: `productos` son SKUs internos propios; las listas de
@@ -28,10 +30,10 @@ import {
 export const ESTADOS_PRODUCTO = ["activo", "limbo", "no_comercializa"] as const
 export type EstadoProducto = (typeof ESTADOS_PRODUCTO)[number]
 
-export const productos = sqliteTable(
+export const productos = pgTable(
   "productos",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     /** SKU interno propio de la ferretería (no el del proveedor). */
     codigoInterno: text("codigo_interno").notNull(),
     nombre: text("nombre").notNull(),
@@ -42,7 +44,7 @@ export const productos = sqliteTable(
     marca: text("marca").notNull(),
     medida: text("medida").notNull(),
     /** true = genérico (la marca da igual); false = la marca exige SKU separado. */
-    esGenerico: integer("es_generico", { mode: "boolean" }).notNull().default(true),
+    esGenerico: boolean("es_generico").notNull().default(true),
     /** activo = en inventario; limbo = importado sin alta; no_comercializa = ruido. */
     estado: text("estado", { enum: ESTADOS_PRODUCTO }).notNull().default("activo"),
     ubicacion: text("ubicacion").notNull().default(""),
@@ -58,13 +60,13 @@ export const productos = sqliteTable(
   ]
 )
 
-export const proveedores = sqliteTable(
+export const proveedores = pgTable(
   "proveedores",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     nombre: text("nombre").notNull(),
     /** Proveedor preferido por defecto al sugerir pedidos (desempate). */
-    esHabitual: integer("es_habitual", { mode: "boolean" }).notNull().default(false),
+    esHabitual: boolean("es_habitual").notNull().default(false),
   },
   (t) => [unique("proveedores_nombre_uq").on(t.nombre)]
 )
@@ -75,10 +77,10 @@ export const proveedores = sqliteTable(
  * precio vigente. Así "muchos códigos de proveedor → 1 SKU interno" (P2) y se
  * puede elegir el más barato (P3).
  */
-export const preciosProveedor = sqliteTable(
+export const preciosProveedor = pgTable(
   "precios_proveedor",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     productoId: integer("producto_id")
       .notNull()
       .references(() => productos.id, { onDelete: "cascade" }),
@@ -90,7 +92,7 @@ export const preciosProveedor = sqliteTable(
     precio: real("precio").notNull(),
     vigenciaDesde: text("vigencia_desde")
       .notNull()
-      .default(sql`(CURRENT_DATE)`),
+      .default(sql`(CURRENT_DATE::text)`),
   },
   (t) => [
     // Un proveedor no repite el mismo alias; permite resolver alias → SKU.
@@ -109,26 +111,26 @@ export const ESTADOS_REMITO = ["borrador", "conciliado", "consolidado"] as const
 export type EstadoRemito = (typeof ESTADOS_REMITO)[number]
 
 /** Paso 1: ingreso físico provisorio, cargado por el playero. */
-export const remitos = sqliteTable(
+export const remitos = pgTable(
   "remitos",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     numero: text("numero").notNull(),
     proveedorId: integer("proveedor_id")
       .notNull()
       .references(() => proveedores.id),
     fecha: text("fecha")
       .notNull()
-      .default(sql`(CURRENT_TIMESTAMP)`),
+      .default(sql`(CURRENT_TIMESTAMP::text)`),
     estado: text("estado", { enum: ESTADOS_REMITO }).notNull().default("borrador"),
   },
   (t) => [index("remitos_estado_idx").on(t.estado)]
 )
 
-export const remitoLineas = sqliteTable(
+export const remitoLineas = pgTable(
   "remito_lineas",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     remitoId: integer("remito_id")
       .notNull()
       .references(() => remitos.id, { onDelete: "cascade" }),
@@ -142,8 +144,8 @@ export const remitoLineas = sqliteTable(
 )
 
 /** Paso 2: factura del proveedor, para conciliar contra el remito. */
-export const facturas = sqliteTable("facturas", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const facturas = pgTable("facturas", {
+  id: serial("id").primaryKey(),
   numero: text("numero").notNull(),
   proveedorId: integer("proveedor_id")
     .notNull()
@@ -151,13 +153,13 @@ export const facturas = sqliteTable("facturas", {
   remitoId: integer("remito_id").references(() => remitos.id),
   fecha: text("fecha")
     .notNull()
-    .default(sql`(CURRENT_TIMESTAMP)`),
+    .default(sql`(CURRENT_TIMESTAMP::text)`),
 })
 
-export const facturaLineas = sqliteTable(
+export const facturaLineas = pgTable(
   "factura_lineas",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     facturaId: integer("factura_id")
       .notNull()
       .references(() => facturas.id, { onDelete: "cascade" }),
@@ -174,10 +176,10 @@ export const TIPOS_MOVIMIENTO = ["ingreso", "ajuste"] as const
 export type TipoMovimiento = (typeof TIPOS_MOVIMIENTO)[number]
 
 /** Log de cambios de stock; se escribe recién al consolidar un remito. */
-export const movimientosStock = sqliteTable(
+export const movimientosStock = pgTable(
   "movimientos_stock",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     productoId: integer("producto_id")
       .notNull()
       .references(() => productos.id),
@@ -186,7 +188,7 @@ export const movimientosStock = sqliteTable(
     remitoId: integer("remito_id").references(() => remitos.id),
     fecha: text("fecha")
       .notNull()
-      .default(sql`(CURRENT_TIMESTAMP)`),
+      .default(sql`(CURRENT_TIMESTAMP::text)`),
   },
   (t) => [index("movimientos_producto_idx").on(t.productoId)]
 )
@@ -198,21 +200,21 @@ export const movimientosStock = sqliteTable(
 export const ESTADOS_ORDEN = ["sugerida", "emitida"] as const
 export type EstadoOrden = (typeof ESTADOS_ORDEN)[number]
 
-export const ordenesCompra = sqliteTable("ordenes_compra", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const ordenesCompra = pgTable("ordenes_compra", {
+  id: serial("id").primaryKey(),
   proveedorId: integer("proveedor_id")
     .notNull()
     .references(() => proveedores.id),
   fecha: text("fecha")
     .notNull()
-    .default(sql`(CURRENT_TIMESTAMP)`),
+    .default(sql`(CURRENT_TIMESTAMP::text)`),
   estado: text("estado", { enum: ESTADOS_ORDEN }).notNull().default("sugerida"),
 })
 
-export const ordenLineas = sqliteTable(
+export const ordenLineas = pgTable(
   "orden_lineas",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     ordenId: integer("orden_id")
       .notNull()
       .references(() => ordenesCompra.id, { onDelete: "cascade" }),
