@@ -11,6 +11,13 @@ import {
   Truck,
 } from "lucide-react"
 
+import {
+  productoPorCodigo,
+  productosBajoStock,
+  resumenCatalogo,
+  sistemas,
+} from "@/lib/data"
+
 import type {
   CatalogHealthMetric,
   Kpi,
@@ -22,125 +29,135 @@ export const ownerName = "Yomara"
 export const today = "Martes 15 de julio"
 export const tenant = "Sucursal Centro"
 
+/** Único proveedor real de ambos catálogos (Grupo DEMA / FERVA S.A.). */
+const PROVEEDOR = "Grupo DEMA"
+
+const ARS = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  maximumFractionDigits: 0,
+})
+
+const nombreDe = (codigo: string) => productoPorCodigo[codigo]?.nombre ?? codigo
+
+// Ingresos armados con SKUs reales del catálogo, provistos por Grupo DEMA.
+export const receivings: Receiving[] = [
+  {
+    id: "rec-1",
+    remito: "R-00421",
+    proveedor: PROVEEDOR,
+    articulo: nombreDe("60-100050000"),
+    cantidad: "40 tiras",
+    estado: "validado",
+  },
+  {
+    id: "rec-2",
+    remito: "R-00422",
+    proveedor: PROVEEDOR,
+    articulo: nombreDe("01-090025000"),
+    cantidad: "120 un.",
+    estado: "diferencia",
+  },
+  {
+    id: "rec-3",
+    remito: "R-00423",
+    proveedor: PROVEEDOR,
+    articulo: nombreDe("03-130050000"),
+    cantidad: "60 un.",
+    estado: "sin-factura",
+  },
+  {
+    id: "rec-4",
+    remito: "R-00424",
+    proveedor: PROVEEDOR,
+    articulo: nombreDe("60-161025000"),
+    cantidad: "24 un.",
+    estado: "equivocado",
+  },
+  {
+    id: "rec-5",
+    remito: "R-00425",
+    proveedor: PROVEEDOR,
+    articulo: nombreDe("01-240050025"),
+    cantidad: "150 un.",
+    estado: "validado",
+  },
+  {
+    id: "rec-6",
+    remito: "R-00426",
+    proveedor: PROVEEDOR,
+    articulo: nombreDe("60-130063000"),
+    cantidad: "80 un.",
+    estado: "validado",
+  },
+  {
+    id: "rec-7",
+    remito: "R-00427",
+    proveedor: PROVEEDOR,
+    articulo: nombreDe("08-900111008"),
+    cantidad: "3 un.",
+    estado: "diferencia",
+  },
+]
+
+// Sugeridos agrupados por línea/sistema del catálogo (hay un solo proveedor).
+export const reorderGroups: ReorderGroup[] = sistemas
+  .map((sistema) => {
+    const items = productosBajoStock.filter((p) => p.sistema === sistema)
+    const monto = items.reduce((sum, p) => sum + p.precioLista, 0)
+    return {
+      id: `reorder-${sistema}`,
+      linea: sistema,
+      skuCount: items.length,
+      monto: ARS.format(monto),
+    }
+  })
+  .filter((group) => group.skuCount > 0)
+
+export const reorderTotalSkus = productosBajoStock.length
+
+export const reorderTotalMonto = ARS.format(
+  productosBajoStock.reduce((sum, p) => sum + p.precioLista, 0)
+)
+
+const ingresosConDiferencia = receivings.filter(
+  (r) => r.estado === "diferencia"
+).length
+
 export const kpis: Kpi[] = [
   {
     id: "skus-activos",
     label: "SKUs activos",
-    value: "3.842",
-    caption: "18 ocultos hoy por baja rotación",
+    value: resumenCatalogo.totalSkus.toLocaleString("es-AR"),
+    caption: `${sistemas.length} líneas: galvanizado, epoxi y SIGAS`,
     tone: "primary",
     icon: Package,
   },
   {
     id: "valor-stock",
     label: "Valor de stock",
-    value: "$48.250.500",
-    caption: "+1,4% vs ayer",
+    value: ARS.format(resumenCatalogo.valorStock),
+    caption: "Sobre el stock mock del catálogo",
     tone: "info",
     icon: DollarSign,
   },
   {
     id: "ingresos-pendientes",
     label: "Ingresos sin validar",
-    value: "7",
-    caption: "2 con diferencias contra factura",
+    value: String(receivings.length),
+    caption: `${ingresosConDiferencia} con diferencias contra factura`,
     tone: "warning",
     icon: ClipboardCheck,
   },
   {
     id: "sugeridos-pedido",
     label: "Sugeridos para pedir",
-    value: "41 SKUs",
-    caption: "≈ $3.120.500 a 3 proveedores",
+    value: `${reorderTotalSkus} SKUs`,
+    caption: `≈ ${reorderTotalMonto} · ${reorderGroups.length} líneas`,
     tone: "primary",
     icon: Truck,
   },
 ]
-
-export const receivings: Receiving[] = [
-  {
-    id: "rec-1",
-    remito: "R-00421",
-    proveedor: "Bulonera Centro",
-    articulo: "Tornillo autoperforante 1/4\" x 2\"",
-    cantidad: "200 un.",
-    estado: "validado",
-  },
-  {
-    id: "rec-2",
-    remito: "R-00422",
-    proveedor: "Acindar",
-    articulo: "Hierro ADN 420 — 12 mm x 12 m",
-    cantidad: "30 barras",
-    estado: "diferencia",
-  },
-  {
-    id: "rec-3",
-    remito: "R-00423",
-    proveedor: "Klaukol",
-    articulo: "Adhesivo de contacto x 1 L",
-    cantidad: "12 un.",
-    estado: "sin-factura",
-  },
-  {
-    id: "rec-4",
-    remito: "R-00424",
-    proveedor: "Sintec",
-    articulo: "Cinta aisladora 20 m",
-    cantidad: "50 un.",
-    estado: "equivocado",
-  },
-  {
-    id: "rec-5",
-    remito: "R-00425",
-    proveedor: "Acindar",
-    articulo: "Malla electrosoldada 15x15 — 4 mm",
-    cantidad: "20 paños",
-    estado: "validado",
-  },
-  {
-    id: "rec-6",
-    remito: "R-00426",
-    proveedor: "Bulonera Centro",
-    articulo: "Tuerca hexagonal 3/8\"",
-    cantidad: "500 un.",
-    estado: "validado",
-  },
-  {
-    id: "rec-7",
-    remito: "R-00427",
-    proveedor: "Klaukol",
-    articulo: "Pastina x 5 kg",
-    cantidad: "24 un.",
-    estado: "diferencia",
-  },
-]
-
-export const reorderGroups: ReorderGroup[] = [
-  {
-    id: "reorder-1",
-    proveedor: "Bulonera Centro",
-    skuCount: 18,
-    monto: "$890.500",
-  },
-  {
-    id: "reorder-2",
-    proveedor: "Acindar",
-    skuCount: 12,
-    monto: "$1.530.000",
-  },
-  {
-    id: "reorder-3",
-    proveedor: "Klaukol",
-    skuCount: 11,
-    monto: "$700.000",
-  },
-]
-
-export const reorderTotalSkus = reorderGroups.reduce(
-  (sum, group) => sum + group.skuCount,
-  0
-)
 
 export const catalogHealth: CatalogHealthMetric[] = [
   {

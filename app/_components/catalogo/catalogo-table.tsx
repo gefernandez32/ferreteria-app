@@ -1,9 +1,4 @@
-import {
-  ChevronDown,
-  ChevronsUpDown,
-  ChevronUp,
-  PackageX,
-} from "lucide-react"
+import { ChevronDown, ChevronsUpDown, ChevronUp, PackageX } from "lucide-react"
 
 import {
   Table,
@@ -14,13 +9,14 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import type { Producto, Sistema } from "@/lib/data"
+import type { OrdenCampo } from "@/lib/api/types"
+import type { ProductoListItem } from "@/lib/api/types"
 
 import { formatArs } from "./format"
 import { StockBadge } from "./stock-badge"
-import type { Orden, OrdenCampo } from "./types"
+import { estadoMeta, type Orden } from "./types"
 
-const sistemaTone: Record<Sistema, string> = {
+const sistemaTone: Record<string, string> = {
   "Galvanizado (agua)": "bg-info/10 text-info",
   "Epoxi (gas)": "bg-warning/15 text-warning-foreground",
   "SIGAS Thermofusión": "bg-primary/10 text-primary",
@@ -58,23 +54,37 @@ function SortableHead({ campo, label, orden, onSort, align = "left" }: SortableH
   )
 }
 
+function EstadoPill({ estado }: { estado: ProductoListItem["estado"] }) {
+  const meta = estadoMeta[estado]
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        meta.toneClass
+      )}
+    >
+      {meta.label}
+    </span>
+  )
+}
+
 function EmptyState() {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
       <PackageX className="size-8 text-muted-foreground" aria-hidden="true" />
       <p className="text-sm font-medium text-foreground">Sin resultados</p>
       <p className="text-xs text-muted-foreground">
-        Probá con otro código, sistema o categoría.
+        Probá con otro código (interno o de proveedor), sistema o estado.
       </p>
     </div>
   )
 }
 
 type CatalogoTableProps = {
-  productos: Producto[]
+  productos: ProductoListItem[]
   orden: Orden
   onSort: (campo: OrdenCampo) => void
-  onSelectProducto: (producto: Producto) => void
+  onSelectProducto: (producto: ProductoListItem) => void
 }
 
 export function CatalogoTable({
@@ -91,32 +101,25 @@ export function CatalogoTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <SortableHead campo="codigo" label="Código" orden={orden} onSort={onSort} />
+          <SortableHead campo="codigoInterno" label="SKU interno" orden={orden} onSort={onSort} />
           <TableHead>Artículo</TableHead>
-          <TableHead>Sistema</TableHead>
-          <TableHead className="hidden lg:table-cell">Categoría</TableHead>
-          <TableHead className="hidden xl:table-cell">Proveedor</TableHead>
-          <TableHead className="hidden md:table-cell">Ubic.</TableHead>
+          <TableHead className="hidden md:table-cell">Sistema</TableHead>
+          <TableHead>Estado</TableHead>
+          <TableHead className="hidden text-right lg:table-cell">Prov.</TableHead>
           <SortableHead
-            campo="precioLista"
-            label="Precio"
+            campo="mejorPrecio"
+            label="Mejor precio"
             orden={orden}
             onSort={onSort}
             align="right"
           />
-          <SortableHead
-            campo="stock"
-            label="Stock"
-            orden={orden}
-            onSort={onSort}
-            align="right"
-          />
+          <SortableHead campo="stock" label="Stock" orden={orden} onSort={onSort} align="right" />
         </TableRow>
       </TableHeader>
       <TableBody>
         {productos.map((p) => (
           <TableRow
-            key={p.codigo}
+            key={p.id}
             role="button"
             tabIndex={0}
             aria-label={`Ver detalle de ${p.familia} ${p.medida}`}
@@ -130,33 +133,34 @@ export function CatalogoTable({
             }}
           >
             <TableCell className="text-xs tracking-wider text-muted-foreground">
-              {p.codigo}
+              {p.codigoInterno}
             </TableCell>
             <TableCell>
               <span className="font-medium text-foreground">{p.familia}</span>{" "}
               <span className="text-muted-foreground">{p.medida}</span>
             </TableCell>
-            <TableCell>
+            <TableCell className="hidden md:table-cell">
               <span
                 className={cn(
                   "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                  sistemaTone[p.sistema]
+                  sistemaTone[p.sistema] ?? "bg-muted text-muted-foreground"
                 )}
               >
                 {p.sistema}
               </span>
             </TableCell>
-            <TableCell className="hidden text-muted-foreground lg:table-cell">
-              {p.categoria}
+            <TableCell>
+              <EstadoPill estado={p.estado} />
             </TableCell>
-            <TableCell className="hidden text-muted-foreground xl:table-cell">
-              {p.proveedor}
-            </TableCell>
-            <TableCell className="hidden text-xs tracking-wider text-muted-foreground md:table-cell">
-              {p.ubicacion}
+            <TableCell className="hidden text-right tabular-nums text-muted-foreground lg:table-cell">
+              {p.numProveedores}
             </TableCell>
             <TableCell className="text-right tabular-nums">
-              {formatArs(p.precioLista)}
+              {p.mejorPrecio === null ? (
+                <span className="text-muted-foreground">—</span>
+              ) : (
+                formatArs(p.mejorPrecio)
+              )}
             </TableCell>
             <TableCell className="text-right">
               <StockBadge stock={p.stock} stockMinimo={p.stockMinimo} />

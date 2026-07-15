@@ -1,118 +1,114 @@
 "use client"
 
-import { useMemo, useState, type ChangeEvent } from "react"
+import { useMemo, useReducer, useState, type ChangeEvent } from "react"
 import { ChevronLeft, ChevronRight, Download, PackageSearch } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { productos, type Producto } from "@/lib/data"
+import { fetchProductos } from "@/lib/api/productos"
+import { useProductos } from "@/lib/hooks/use-productos"
+import { useDebounced } from "@/lib/hooks/use-debounced"
+import type { FiltrosProductos, OrdenCampo } from "@/lib/api/types"
 
 import { CatalogoDetailDialog } from "./catalogo-detail-dialog"
 import { CatalogoFilters } from "./catalogo-filters"
 import { CatalogoTable } from "./catalogo-table"
 import { productosToCsv } from "./export-csv"
-import type { CategoriaFiltro, Orden, OrdenCampo, SistemaFiltro } from "./types"
+import { filtrosIniciales, filtrosReducer } from "./filtros-reducer"
+import type { EstadoFiltro } from "./types"
 
 const PAGE_SIZE = 20
-const ORDEN_INICIAL: Orden = { campo: "codigo", dir: "asc" }
 
 export function CatalogoView() {
-  const [query, setQuery] = useState("")
-  const [sistema, setSistema] = useState<SistemaFiltro>("todos")
-  const [categoria, setCategoria] = useState<CategoriaFiltro>("todas")
-  const [orden, setOrden] = useState<Orden>(ORDEN_INICIAL)
-  const [page, setPage] = useState(1)
-  const [seleccionado, setSeleccionado] = useState<Producto | null>(null)
+  const [filtros, dispatch] = useReducer(filtrosReducer, filtrosIniciales)
+  const [seleccionadoId, setSeleccionadoId] = useState<number | null>(null)
+  const [exportando, setExportando] = useState(false)
 
-  // Filtrado por sistema + búsqueda (sin categoría) — base para los conteos.
-  const baseSinCategoria = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return productos.filter((p) => {
-      if (sistema !== "todos" && p.sistema !== sistema) return false
-      if (q && !`${p.codigo} ${p.nombre}`.toLowerCase().includes(q)) return false
-      return true
-    })
-  }, [query, sistema])
+  const queryDebounced = useDebounced(filtros.query, 300)
 
-  const conteoCategorias = useMemo(() => {
-    return baseSinCategoria.reduce<Record<string, number>>((acc, p) => {
-      acc[p.categoria] = (acc[p.categoria] ?? 0) + 1
-      return acc
-    }, {})
-  }, [baseSinCategoria])
+  const params = useMemo<FiltrosProductos>(
+    () => ({
+      query: queryDebounced,
+      sistema: filtros.sistema,
+      categoria: filtros.categoria,
+      estado: filtros.estado,
+      ordenCampo: filtros.orden.campo,
+      ordenDir: filtros.orden.dir,
+      page: filtros.page,
+      pageSize: PAGE_SIZE,
+    }),
+    [
+      queryDebounced,
+      filtros.sistema,
+      filtros.categoria,
+      filtros.estado,
+      filtros.orden,
+      filtros.page,
+    ]
+  )
 
-  const ordenados = useMemo(() => {
-    const filtrados =
-      categoria === "todas"
-        ? baseSinCategoria
-        : baseSinCategoria.filter((p) => p.categoria === categoria)
-    const factor = orden.dir === "asc" ? 1 : -1
-    return filtrados.toSorted((a, b) => {
-      if (orden.campo === "codigo") return a.codigo.localeCompare(b.codigo) * factor
-      return (a[orden.campo] - b[orden.campo]) * factor
-    })
-  }, [baseSinCategoria, categoria, orden])
-
-  const totalPaginas = Math.max(1, Math.ceil(ordenados.length / PAGE_SIZE))
-  const paginaActual = Math.min(page, totalPaginas)
-
-  const visibles = useMemo(() => {
-    const inicio = (paginaActual - 1) * PAGE_SIZE
-    return ordenados.slice(inicio, inicio + PAGE_SIZE)
-  }, [ordenados, paginaActual])
+  const { data, isLoading, isError } = useProductos(params)
+  const items = data?.items ?? []
+  const total = data?.total ?? 0
+  const totalPaginas = data?.totalPaginas ?? 1
+  const paginaActual = data?.page ?? filtros.page
 
   function handleSearchChange(event: ChangeEvent<HTMLInputElement>) {
-    setQuery(event.target.value)
-    setPage(1)
+    dispatch({ type: "query", value: event.target.value })
   }
 
-  function handleSistemaFilter(value: SistemaFiltro) {
-    setSistema(value)
-    setPage(1)
+  function handleSistemaFilter(value: string) {
+    dispatch({ type: "sistema", value })
   }
 
   function handleCategoriaFilter(event: ChangeEvent<HTMLSelectElement>) {
-    setCategoria(event.target.value as CategoriaFiltro)
-    setPage(1)
+    dispatch({ type: "categoria", value: event.target.value })
+  }
+
+  function handleEstadoFilter(value: EstadoFiltro) {
+    dispatch({ type: "estado", value })
   }
 
   function handleSort(campo: OrdenCampo) {
-    setOrden((prev) =>
-      prev.campo === campo
-        ? { campo, dir: prev.dir === "asc" ? "desc" : "asc" }
-        : { campo, dir: "asc" }
-    )
+    dispatch({ type: "sort", campo })
   }
 
-  function handleSelectProducto(producto: Producto) {
-    setSeleccionado(producto)
+  function handleSelectProducto(producto: { id: number }) {
+    setSeleccionadoId(producto.id)
   }
 
   function handleCloseDetalle() {
-    setSeleccionado(null)
+    setSeleccionadoId(null)
   }
 
-  function handleExportCsv() {
-    const csv = productosToCsv(ordenados)
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const enlace = document.createElement("a")
-    enlace.href = url
-    enlace.download = "catalogo-ferreteria.csv"
-    enlace.click()
-    URL.revokeObjectURL(url)
+  async function handleExportCsv() {
+    setExportando(true)
+    try {
+      // Exporta TODO el resultado filtrado (no solo la página visible).
+      const todos = await fetchProductos({ ...params, page: 1, pageSize: 100_000 })
+      const csv = productosToCsv(todos.items)
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(blob)
+      const enlace = document.createElement("a")
+      enlace.href = url
+      enlace.download = "catalogo-ferreteria.csv"
+      enlace.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExportando(false)
+    }
   }
 
   function handlePrevPage() {
-    setPage((prev) => Math.max(1, prev - 1))
+    dispatch({ type: "page", value: Math.max(1, paginaActual - 1) })
   }
 
   function handleNextPage() {
-    setPage((prev) => Math.min(totalPaginas, prev + 1))
+    dispatch({ type: "page", value: Math.min(totalPaginas, paginaActual + 1) })
   }
 
-  const desde = ordenados.length === 0 ? 0 : (paginaActual - 1) * PAGE_SIZE + 1
-  const hasta = Math.min(paginaActual * PAGE_SIZE, ordenados.length)
+  const desde = total === 0 ? 0 : (paginaActual - 1) * PAGE_SIZE + 1
+  const hasta = Math.min(paginaActual * PAGE_SIZE, total)
 
   return (
     <div className="flex min-h-full flex-col bg-background">
@@ -120,10 +116,11 @@ export function CatalogoView() {
         <section className="flex flex-col gap-1">
           <h1 className="flex items-center gap-2 font-heading text-4xl font-normal text-foreground">
             <PackageSearch className="size-8 text-primary" aria-hidden="true" />
-            Catálogo
+            Catálogo maestro
           </h1>
           <p className="text-sm text-muted-foreground">
-            Accesorios DEMA (galvanizado y epoxi) y sistema SIGAS Thermofusión.
+            SKUs internos propios. Las listas de proveedor son tarifarios vinculados, no el
+            inventario.
           </p>
         </section>
 
@@ -133,8 +130,8 @@ export function CatalogoView() {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-baseline gap-2">
                   <CardTitle>Artículos</CardTitle>
-                  <span className="text-xs text-muted-foreground">
-                    {ordenados.length} de {productos.length}
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {isLoading ? "cargando…" : `${total} SKUs`}
                   </span>
                 </div>
                 <Button
@@ -142,38 +139,44 @@ export function CatalogoView() {
                   variant="outline"
                   size="sm"
                   onClick={handleExportCsv}
-                  disabled={ordenados.length === 0}
+                  disabled={total === 0 || exportando}
                 >
                   <Download className="size-3.5" aria-hidden="true" />
-                  Exportar CSV
+                  {exportando ? "Exportando…" : "Exportar CSV"}
                 </Button>
               </div>
               <CatalogoFilters
-                query={query}
-                sistema={sistema}
-                categoria={categoria}
-                conteoCategorias={conteoCategorias}
-                totalFiltrado={baseSinCategoria.length}
+                query={filtros.query}
+                sistema={filtros.sistema}
+                categoria={filtros.categoria}
+                estado={filtros.estado}
                 onSearchChange={handleSearchChange}
                 onSistemaChange={handleSistemaFilter}
                 onCategoriaChange={handleCategoriaFilter}
+                onEstadoChange={handleEstadoFilter}
               />
             </div>
           </CardHeader>
 
           <CardContent className="px-0">
-            <CatalogoTable
-              productos={visibles}
-              orden={orden}
-              onSort={handleSort}
-              onSelectProducto={handleSelectProducto}
-            />
+            {isError ? (
+              <p className="px-6 py-16 text-center text-sm text-destructive">
+                No se pudo cargar el catálogo. Reintentá en unos segundos.
+              </p>
+            ) : (
+              <CatalogoTable
+                productos={items}
+                orden={filtros.orden}
+                onSort={handleSort}
+                onSelectProducto={handleSelectProducto}
+              />
+            )}
           </CardContent>
 
-          {ordenados.length > 0 ? (
+          {total > 0 ? (
             <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
               <span className="text-xs text-muted-foreground tabular-nums">
-                {desde}-{hasta} de {ordenados.length}
+                {desde}-{hasta} de {total}
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground tabular-nums">
@@ -205,7 +208,7 @@ export function CatalogoView() {
         </Card>
       </main>
 
-      <CatalogoDetailDialog producto={seleccionado} onClose={handleCloseDetalle} />
+      <CatalogoDetailDialog productoId={seleccionadoId} onClose={handleCloseDetalle} />
     </div>
   )
 }

@@ -131,12 +131,11 @@ const SIGAS: Linea = {
 /* Enriquecimiento mock (determinista a partir del código)            */
 /* ------------------------------------------------------------------ */
 
-const PROVEEDORES = [
-  "Grupo DEMA",
-  "FERVA S.A.",
-  "Sanitarios del Centro SRL",
-  "Gas y Agua Mayorista",
-] as const
+/**
+ * Único proveedor real: ambos catálogos son del mismo fabricante.
+ * "Grupo DEMA" (fábrica FERVA S.A.). No se inventan otros proveedores.
+ */
+const PROVEEDOR = "Grupo DEMA"
 
 /** Hash simple y estable de una cadena (sin depender de Date/Math.random). */
 function seed(s: string): number {
@@ -168,7 +167,7 @@ function mk(
     material: linea.material,
     marca: linea.marca,
     medida,
-    proveedor: PROVEEDORES[b % PROVEEDORES.length],
+    proveedor: PROVEEDOR,
     precioLista: redondear(350 + (a % 84000)),
     stock: a % 140,
     stockMinimo: 5 + (b % 25),
@@ -533,7 +532,7 @@ export const categorias: Categoria[] = [
   "Herramientas y accesorios",
 ]
 
-export const proveedores: string[] = [...PROVEEDORES]
+export const proveedores: string[] = [PROVEEDOR]
 
 /** Índice por código para acceso O(1). */
 export const productoPorCodigo: Record<string, Producto> = Object.fromEntries(

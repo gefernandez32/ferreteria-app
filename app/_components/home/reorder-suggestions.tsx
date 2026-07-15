@@ -3,15 +3,11 @@ import { ArrowRight, Truck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { cn } from "@/lib/utils"
 
-import { reorderGroups, reorderTotalSkus } from "./mocks"
-
-const formatMonto = (monto: string) => monto
+import { reorderGroups, reorderTotalMonto, reorderTotalSkus } from "./mocks"
 
 export function ReorderSuggestions() {
-  const totalMonto = "$3.120.500"
-  const proveedores = reorderGroups.length
+  const lineas = reorderGroups.length
   return (
     <Card>
       <CardHeader className="border-b">
@@ -22,7 +18,7 @@ export function ReorderSuggestions() {
               Pedido sugerido
             </CardTitle>
             <span className="text-xs text-muted-foreground">
-              SKUs por debajo del mínimo · agrupación automática por proveedor
+              SKUs por debajo del mínimo · agrupación automática por línea
             </span>
           </div>
           <Button
@@ -40,8 +36,8 @@ export function ReorderSuggestions() {
       <CardContent>
         <div className="flex items-baseline gap-2 pb-3">
           <span className="text-2xl font-semibold tracking-tight">{reorderTotalSkus} SKUs</span>
-          <span className="text-sm text-muted-foreground">· {proveedores} proveedores</span>
-          <span className="ml-auto text-base font-medium tabular-nums">{totalMonto}</span>
+          <span className="text-sm text-muted-foreground">· {lineas} líneas</span>
+          <span className="ml-auto text-base font-medium tabular-nums">{reorderTotalMonto}</span>
         </div>
         <Separator />
         <ul className="divide-y divide-border">
@@ -51,19 +47,14 @@ export function ReorderSuggestions() {
               className="flex items-center justify-between gap-3 py-3"
             >
               <div className="flex flex-col">
-                <span className="font-medium">{group.proveedor}</span>
+                <span className="font-medium">{group.linea}</span>
                 <span className="text-xs text-muted-foreground">
                   {group.skuCount} SKUs bajo mínimo
                 </span>
               </div>
               <div className="flex items-center gap-3">
-                <span
-                  className={cn(
-                    "text-sm font-medium tabular-nums",
-                    "text-foreground"
-                  )}
-                >
-                  {formatMonto(group.monto)}
+                <span className="text-sm font-medium tabular-nums text-foreground">
+                  {group.monto}
                 </span>
                 <Button
                   variant="outline"

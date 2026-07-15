@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // El driver nativo de SQLite no debe bundlearse: se resuelve en runtime (Node).
+  serverExternalPackages: ["better-sqlite3"],
 };
 
 export default nextConfig;

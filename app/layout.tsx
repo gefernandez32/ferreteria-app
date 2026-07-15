@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 
+import { AppNav } from "./_components/shell/app-nav";
+import { Providers } from "./providers";
+
 const inter = Inter({
   variable: "--font-sans",
   subsets: ["latin"],
@@ -32,7 +35,14 @@ export default function RootLayout({
       lang="es"
       className={`${inter.variable} ${instrumentSerif.variable} dark h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full">
+        <Providers>
+          <div className="flex min-h-dvh flex-col md:flex-row">
+            <AppNav />
+            <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+          </div>
+        </Providers>
+      </body>
     </html>
   );
 }

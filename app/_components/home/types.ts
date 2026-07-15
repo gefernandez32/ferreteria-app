@@ -28,7 +28,8 @@ export type Receiving = {
 
 export type ReorderGroup = {
   id: string
-  proveedor: string
+  /** Línea/sistema del catálogo (agrupación real; hay un solo proveedor). */
+  linea: string
   skuCount: number
   monto: string
 }
