@@ -1,4 +1,9 @@
-import { PackageX } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronsUpDown,
+  ChevronUp,
+  PackageX,
+} from "lucide-react"
 
 import {
   Table,
@@ -13,11 +18,44 @@ import type { Producto, Sistema } from "@/lib/data"
 
 import { formatArs } from "./format"
 import { StockBadge } from "./stock-badge"
+import type { Orden, OrdenCampo } from "./types"
 
 const sistemaTone: Record<Sistema, string> = {
   "Galvanizado (agua)": "bg-info/10 text-info",
   "Epoxi (gas)": "bg-warning/15 text-warning-foreground",
   "SIGAS Thermofusión": "bg-primary/10 text-primary",
+}
+
+type SortableHeadProps = {
+  campo: OrdenCampo
+  label: string
+  orden: Orden
+  onSort: (campo: OrdenCampo) => void
+  align?: "left" | "right"
+}
+
+function SortableHead({ campo, label, orden, onSort, align = "left" }: SortableHeadProps) {
+  const activo = orden.campo === campo
+  const Icon = !activo ? ChevronsUpDown : orden.dir === "asc" ? ChevronUp : ChevronDown
+  return (
+    <TableHead className={align === "right" ? "text-right" : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(campo)}
+        aria-label={`Ordenar por ${label}`}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-md text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+          align === "right" && "flex-row-reverse"
+        )}
+      >
+        {label}
+        <Icon
+          className={cn("size-3.5", activo ? "text-primary" : "text-muted-foreground")}
+          aria-hidden="true"
+        />
+      </button>
+    </TableHead>
+  )
 }
 
 function EmptyState() {
@@ -32,7 +70,19 @@ function EmptyState() {
   )
 }
 
-export function CatalogoTable({ productos }: { productos: Producto[] }) {
+type CatalogoTableProps = {
+  productos: Producto[]
+  orden: Orden
+  onSort: (campo: OrdenCampo) => void
+  onSelectProducto: (producto: Producto) => void
+}
+
+export function CatalogoTable({
+  productos,
+  orden,
+  onSort,
+  onSelectProducto,
+}: CatalogoTableProps) {
   if (productos.length === 0) {
     return <EmptyState />
   }
@@ -41,20 +91,45 @@ export function CatalogoTable({ productos }: { productos: Producto[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Código</TableHead>
+          <SortableHead campo="codigo" label="Código" orden={orden} onSort={onSort} />
           <TableHead>Artículo</TableHead>
           <TableHead>Sistema</TableHead>
           <TableHead className="hidden lg:table-cell">Categoría</TableHead>
           <TableHead className="hidden xl:table-cell">Proveedor</TableHead>
           <TableHead className="hidden md:table-cell">Ubic.</TableHead>
-          <TableHead className="text-right">Precio</TableHead>
-          <TableHead className="text-right">Stock</TableHead>
+          <SortableHead
+            campo="precioLista"
+            label="Precio"
+            orden={orden}
+            onSort={onSort}
+            align="right"
+          />
+          <SortableHead
+            campo="stock"
+            label="Stock"
+            orden={orden}
+            onSort={onSort}
+            align="right"
+          />
         </TableRow>
       </TableHeader>
       <TableBody>
         {productos.map((p) => (
-          <TableRow key={p.codigo}>
-            <TableCell className="font-mono text-xs text-muted-foreground">
+          <TableRow
+            key={p.codigo}
+            role="button"
+            tabIndex={0}
+            aria-label={`Ver detalle de ${p.familia} ${p.medida}`}
+            className="cursor-pointer"
+            onClick={() => onSelectProducto(p)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault()
+                onSelectProducto(p)
+              }
+            }}
+          >
+            <TableCell className="text-xs tracking-wider text-muted-foreground">
               {p.codigo}
             </TableCell>
             <TableCell>
@@ -77,7 +152,7 @@ export function CatalogoTable({ productos }: { productos: Producto[] }) {
             <TableCell className="hidden text-muted-foreground xl:table-cell">
               {p.proveedor}
             </TableCell>
-            <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
+            <TableCell className="hidden text-xs tracking-wider text-muted-foreground md:table-cell">
               {p.ubicacion}
             </TableCell>
             <TableCell className="text-right tabular-nums">

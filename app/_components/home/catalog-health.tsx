@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { ArrowRight, BookCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -56,10 +57,10 @@ export function CatalogHealthPanel() {
             size="sm"
             nativeButton={false}
             render={(props) => (
-              <a href="#catalogo" {...props}>
+              <Link href="/catalogo" {...props}>
                 Ir al catálogo
                 <ArrowRight className="size-3.5" aria-hidden="true" />
-              </a>
+              </Link>
             )}
           />
         </div>

@@ -61,7 +61,7 @@ export function ValidationQueue() {
           <TableBody>
             {receivings.map((row) => (
               <TableRow key={row.id}>
-                <TableCell className="font-mono text-xs text-muted-foreground">
+                <TableCell className="text-xs tracking-wider text-muted-foreground">
                   {row.remito}
                 </TableCell>
                 <TableCell className="font-medium">{row.proveedor}</TableCell>

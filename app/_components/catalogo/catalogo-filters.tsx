@@ -15,6 +15,9 @@ type CatalogoFiltersProps = {
   query: string
   sistema: SistemaFiltro
   categoria: CategoriaFiltro
+  /** Cantidad de artículos por categoría segun los otros filtros activos. */
+  conteoCategorias: Record<string, number>
+  totalFiltrado: number
   onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void
   onSistemaChange: (value: SistemaFiltro) => void
   onCategoriaChange: (event: ChangeEvent<HTMLSelectElement>) => void
@@ -24,6 +27,8 @@ export function CatalogoFilters({
   query,
   sistema,
   categoria,
+  conteoCategorias,
+  totalFiltrado,
   onSearchChange,
   onSistemaChange,
   onCategoriaChange,
@@ -88,10 +93,10 @@ export function CatalogoFilters({
             onChange={onCategoriaChange}
             className="h-8 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            <option value="todas">Todas</option>
+            <option value="todas">Todas ({totalFiltrado})</option>
             {categorias.map((c) => (
               <option key={c} value={c}>
-                {c}
+                {c} ({conteoCategorias[c] ?? 0})
               </option>
             ))}
           </select>

@@ -35,7 +35,12 @@ function KpiTile({ kpi }: { kpi: Kpi }) {
           </div>
         </div>
         <div className="flex flex-col gap-0.5">
-          <span className={cn("text-2xl font-semibold tracking-tight", styles.text)}>
+          <span
+            className={cn(
+              "font-heading text-3xl italic leading-none",
+              styles.text
+            )}
+          >
             {kpi.value}
           </span>
           <span className="text-xs text-muted-foreground">{kpi.caption}</span>

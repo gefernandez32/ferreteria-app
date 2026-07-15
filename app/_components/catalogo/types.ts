@@ -5,3 +5,9 @@ export type SistemaFiltro = Sistema | "todos"
 
 /** Valor del filtro de categoría: una categoría concreta o "todas". */
 export type CategoriaFiltro = Categoria | "todas"
+
+/** Campo por el que se puede ordenar la tabla. */
+export type OrdenCampo = "codigo" | "precioLista" | "stock"
+
+/** Estado de ordenamiento de la tabla. */
+export type Orden = { campo: OrdenCampo; dir: "asc" | "desc" }
